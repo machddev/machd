@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Machd — Turnkey Lossless DeepSeek-V4.1-Flash CLI for Apple Silicon (1x 512 GB & 2x 256 GB)
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="${ROOT}/.venv"
+PY_BIN="${VENV_DIR}/bin/python"
+
+ensure_uv() {
+  if command -v uv >/dev/null 2>&1; then
+    command -v uv
+    return
+  fi
+  if [[ -x "${HOME}/.local/bin/uv" ]]; then
+    echo "${HOME}/.local/bin/uv"
+    return
+  fi
+  echo "[machd] Installing uv package manager (one-time)..." >&2
+  curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null
+  export PATH="${HOME}/.local/bin:${PATH}"
+  command -v uv
+}
+
+run_setup() {
+  local worker=""
+  local remote_dir=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --worker) worker="$2"; shift 2 ;;
+      --remote-dir) remote_dir="$2"; shift 2 ;;
+      *) echo "Usage: ./machd setup [--worker <ssh-alias>]" >&2; exit 1 ;;
+    esac
+  done
+
+  if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
+    echo "ERROR: Machd requires Apple Silicon macOS (arm64)." >&2
+    exit 1
+  fi
+
+  local uv_bin
+  uv_bin="$(ensure_uv)"
+
+  if [[ ! -x "$PY_BIN" ]]; then
+    echo "[machd] Creating Python 3.13 runtime environment (.venv)..."
+    "$uv_bin" venv --python 3.13 "$VENV_DIR"
+  fi
+
+  echo "[machd] Installing pinned runtime dependencies..."
+  "$uv_bin" pip install --python "$PY_BIN" -r "${ROOT}/requirements.txt" -q
+
+  local site_dir
+  site_dir="$("$PY_BIN" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+  rm -rf "${site_dir}/dsv41_hyper"
+  cp -R "${ROOT}/runtime/dsv41_hyper" "${site_dir}/dsv41_hyper"
+
+  if [[ -n "$worker" ]]; then
+    local rhome
+    rhome="$(ssh -o BatchMode=yes "$worker" 'printf "%s" "$HOME"')"
+    local rdir="${remote_dir:-${rhome}/$(basename "$ROOT")}"
+    echo "[machd] Syncing runtime to worker '${worker}:${rdir}'..."
+    ssh -o BatchMode=yes "$worker" "mkdir -p '${rdir}'"
+    rsync -az --delete \
+      --exclude='.venv' \
+      --exclude='.git' \
+      --exclude='__pycache__' \
+      "${ROOT}/" "${worker}:${rdir}/"
+    echo "[machd] Running setup on worker '${worker}'..."
+    ssh -o BatchMode=yes "$worker" "cd '${rdir}' && ./machd setup"
+  fi
+
+  echo "[machd] Setup complete."
+}
+
+if [[ "${1:-}" == "setup" ]]; then
+  shift
+  run_setup "$@"
+  exit 0
+fi
+
+if [[ ! -x "$PY_BIN" ]]; then
+  run_setup
+fi
+
+export MACHD_ROOT="$ROOT"
+export PYTHONPATH="${ROOT}/runtime${PYTHONPATH:+:${PYTHONPATH}}"
+exec "$PY_BIN" -c "import sys; from dsv41_hyper.cli import main; raise SystemExit(main(sys.argv[1:]))" "$@"

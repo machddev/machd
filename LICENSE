@@ -1,0 +1,17 @@
+Machd Runtime License
+
+Copyright (c) 2026 Machd
+
+Permission is hereby granted, free of charge, to download, install, and execute
+the Machd software and runtime binaries for personal, research, and commercial
+inference workloads.
+
+Restrictions:
+- Reverse engineering, decompilation, disassembly, or extraction of internal
+  kernels and runtime binaries is prohibited.
+- Redistribution of modified binaries under the Machd name is prohibited without
+  prior written permission.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
